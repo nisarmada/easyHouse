@@ -1,4 +1,7 @@
 .venv
+__pycache__/
+*.pyc
 
 pararius.html
+easyhouse.db
 
