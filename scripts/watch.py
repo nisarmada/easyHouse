@@ -13,10 +13,9 @@ from db.db import get_connection, init_db, sync_listings, upsert_listings
 from scrapers.pararius import DEFAULT_SEARCH_URL, scrape_search
 
 MAX_DETECTION_BUDGET_SEC = 300
-MAX_FAST_POLL_INTERVAL_SEC = 240
-DEFAULT_POLL_INTERVAL_SEC = 60
+POLL_INTERVAL_MIN_SEC = 45
+POLL_INTERVAL_MAX_SEC = 90
 DEFAULT_DEEP_INTERVAL_SEC = 1800
-INTERVAL_JITTER_SEC = 10
 
 BACKOFF_STEPS_SEC = (30, 60, 180, 300)
 PAUSE_AFTER_FAILURES = 4
@@ -69,11 +68,18 @@ def _failure_backoff_sec(consecutive_failures: int) -> int:
     return BACKOFF_STEPS_SEC[index]
 
 
-def _sleep_until_next_poll(interval: int, loop_start: float, extra_delay: int = 0) -> None:
-    jitter = random.uniform(0, INTERVAL_JITTER_SEC)
+def _sleep_until_next_poll(
+    loop_start: float,
+    *,
+    poll_min: int,
+    poll_max: int,
+    extra_delay: int = 0,
+) -> None:
+    delay = random.uniform(poll_min, poll_max) + extra_delay
     elapsed = time.monotonic() - loop_start
-    sleep_for = max(0.0, interval + jitter + extra_delay - elapsed)
+    sleep_for = max(0.0, delay - elapsed)
     if sleep_for:
+        print(f"[{_now()}] Sleeping {sleep_for:.0f}s until next poll")
         time.sleep(sleep_for)
 
 
@@ -83,10 +89,16 @@ def main() -> None:
     )
     parser.add_argument("--url", default=DEFAULT_SEARCH_URL, help="Pararius search URL")
     parser.add_argument(
-        "--interval",
+        "--poll-min",
         type=int,
-        default=DEFAULT_POLL_INTERVAL_SEC,
-        help=f"Base seconds between fast polls (default: {DEFAULT_POLL_INTERVAL_SEC}, max: {MAX_FAST_POLL_INTERVAL_SEC})",
+        default=POLL_INTERVAL_MIN_SEC,
+        help=f"Minimum seconds between fast polls (default: {POLL_INTERVAL_MIN_SEC})",
+    )
+    parser.add_argument(
+        "--poll-max",
+        type=int,
+        default=POLL_INTERVAL_MAX_SEC,
+        help=f"Maximum seconds between fast polls (default: {POLL_INTERVAL_MAX_SEC})",
     )
     parser.add_argument(
         "--deep-interval",
@@ -101,10 +113,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.interval > MAX_FAST_POLL_INTERVAL_SEC:
+    if args.poll_min > args.poll_max:
+        parser.error("--poll-min must be <= --poll-max")
+    if args.poll_max > MAX_DETECTION_BUDGET_SEC:
         parser.error(
-            f"--interval must be <= {MAX_FAST_POLL_INTERVAL_SEC}s "
-            f"(detection budget is {MAX_DETECTION_BUDGET_SEC}s)"
+            f"--poll-max must be <= {MAX_DETECTION_BUDGET_SEC}s (detection budget)"
         )
 
     conn = get_connection()
@@ -121,7 +134,7 @@ def main() -> None:
             raise SystemExit(1) from exc
 
     print(
-        f"[{_now()}] Fast poll: page 1 every ~{args.interval}s (+0–{INTERVAL_JITTER_SEC}s jitter) | "
+        f"[{_now()}] Fast poll: page 1 every {args.poll_min}–{args.poll_max}s (randomized) | "
         f"Full sync: {'off' if args.deep_interval == 0 else f'every {args.deep_interval}s when healthy'}"
     )
 
@@ -171,7 +184,12 @@ def main() -> None:
                         "Consider waiting before restarting or checking your network."
                     )
 
-            _sleep_until_next_poll(args.interval, loop_start, extra_delay=extra_delay)
+            _sleep_until_next_poll(
+                loop_start,
+                poll_min=args.poll_min,
+                poll_max=args.poll_max,
+                extra_delay=extra_delay,
+            )
     except KeyboardInterrupt:
         print(f"\n[{_now()}] Stopped.")
 
