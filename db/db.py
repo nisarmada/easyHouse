@@ -79,3 +79,48 @@ def upsert_listings(conn: sqlite3.Connection, listings: list[Listing]) -> list[L
 
     conn.commit()
     return new_ones
+
+
+def remove_stale_listings(
+    conn: sqlite3.Connection,
+    source: str,
+    seen_external_ids: set[str],
+) -> list[sqlite3.Row]:
+    """Delete listings for this source that were not in the latest full scrape."""
+    if not seen_external_ids:
+        return []
+
+    placeholders = ",".join("?" * len(seen_external_ids))
+    params = [source, *seen_external_ids]
+
+    stale = conn.execute(
+        f"""
+        SELECT external_id, title, url
+        FROM listings
+        WHERE source = ? AND external_id NOT IN ({placeholders})
+        """,
+        params,
+    ).fetchall()
+
+    conn.execute(
+        f"DELETE FROM listings WHERE source = ? AND external_id NOT IN ({placeholders})",
+        params,
+    )
+    conn.commit()
+    return stale
+
+
+def sync_listings(conn: sqlite3.Connection, listings: list[Listing]) -> tuple[list[Listing], list[sqlite3.Row]]:
+    """
+    Upsert all scraped listings, then delete DB rows for this source that are no longer live.
+
+    Only call after a full multi-page scrape — not after a page-1 fast poll.
+    """
+    if not listings:
+        raise ValueError("Refusing to sync an empty scrape (possible fetch failure)")
+
+    source = listings[0].source
+    new_ones = upsert_listings(conn, listings)
+    seen_ids = {listing.external_id for listing in listings}
+    removed = remove_stale_listings(conn, source, seen_ids)
+    return new_ones, removed
