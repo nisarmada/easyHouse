@@ -63,5 +63,6 @@ If none are set, output stays on stdout only.
 ## Notes
 
 - **Funda** only exposes about 15 listings in static HTML. The scraper paginates when new IDs appear, but Funda's search results are mostly JS-rendered, so full coverage is limited without a browser.
+- **Cross-site dedup**: the same flat on Pararius and Funda is stored once as a canonical listing with one alert. Matching uses postcode + house number when available, otherwise street + city + price.
 - **Sync safety**: full sync deletes listings missing from a complete scrape. Fast polls (`watch.py`) only upsert page 1 and never delete.
 - Database file: `easyhouse.db` (gitignored).

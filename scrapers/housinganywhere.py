@@ -53,6 +53,8 @@ def parse_listings(html: str, *, city: str | None = None) -> list[Listing]:
         street = item.get("street", "")
         item_city = item.get("city") or city
         title = street or item.get("propertyType", "Listing")
+        house_number = item.get("houseNumber") or item.get("streetNumber")
+        postcode = item.get("zip") or item.get("postalCode")
         price_eur = item.get("priceEUR")
         if price_eur is None and item.get("price") is not None:
             price_eur = int(item["price"]) // 100
@@ -65,6 +67,9 @@ def parse_listings(html: str, *, city: str | None = None) -> list[Listing]:
                 title=title,
                 price_eur=int(price_eur) if price_eur is not None else None,
                 city=item_city,
+                street=street or None,
+                house_number=str(house_number) if house_number else None,
+                postcode=str(postcode) if postcode else None,
             )
         )
 

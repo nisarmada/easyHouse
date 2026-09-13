@@ -12,3 +12,6 @@ class Listing:
     price_eur: int | None
     city: str | None = None
     search_id: str = "default"
+    street: str | None = None
+    house_number: str | None = None
+    postcode: str | None = None

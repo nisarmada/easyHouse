@@ -38,13 +38,16 @@ def test_search_id_backfill_on_migration(tmp_path: Path) -> None:
     conn = dbmod.get_connection()
     init_db(conn)
 
-    rows = [(row[0], row[1]) for row in conn.execute("SELECT external_id, search_id FROM listings")]
+    rows = [
+        (row[0], row[1])
+        for row in conn.execute("SELECT external_id, search_id FROM listing_sources")
+    ]
     assert rows == [("old1", "pararius")]
 
     new = [Listing("pararius", "new1", "http://y", "New", 2000, None, "pararius")]
     _, removed = sync_listings(conn, new)
     assert [row["external_id"] for row in removed] == ["old1"]
-    remaining = [row[0] for row in conn.execute("SELECT external_id FROM listings")]
+    remaining = [row[0] for row in conn.execute("SELECT external_id FROM listing_sources")]
     assert remaining == ["new1"]
 
 
@@ -63,6 +66,13 @@ def test_upsert_updates_existing_listing(tmp_path: Path) -> None:
     assert len(upsert_listings(conn, [listing])) == 1
     updated = Listing("pararius", "1", "http://x", "Updated", 1200, "Amsterdam", "pararius")
     assert len(upsert_listings(conn, [updated])) == 0
-    row = conn.execute("SELECT title, price_eur FROM listings WHERE external_id = '1'").fetchone()
+    row = conn.execute(
+        """
+        SELECT c.title, c.price_eur
+        FROM canonical_listings c
+        JOIN listing_sources ls ON ls.canonical_id = c.id
+        WHERE ls.external_id = '1'
+        """
+    ).fetchone()
     assert row["title"] == "Updated"
     assert row["price_eur"] == 1200

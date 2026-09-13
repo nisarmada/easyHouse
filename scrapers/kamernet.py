@@ -80,6 +80,7 @@ def parse_listings(html: str, *, base_url: str, city: str | None = None) -> list
     for item in raw_listings:
         listing_id = str(item["listingId"])
         street = item.get("street", "")
+        house_number = item.get("houseNumber")
         listings.append(
             Listing(
                 source="kamernet",
@@ -88,6 +89,9 @@ def parse_listings(html: str, *, base_url: str, city: str | None = None) -> list
                 title=street,
                 price_eur=int(item["totalRentalPrice"]) if item.get("totalRentalPrice") else None,
                 city=item.get("city") or inferred_city,
+                street=street or None,
+                house_number=str(house_number) if house_number else None,
+                postcode=item.get("postalCode") or None,
             )
         )
     return listings
