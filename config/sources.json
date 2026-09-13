@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "name": "Pararius",
+      "url": "https://www.pararius.com/apartments/amsterdam",
+      "enabled": true
+    },
+    {
+      "name": "Kamernet",
+      "url": "https://kamernet.nl/huren/appartement-amsterdam",
+      "enabled": true
+    },
+    {
+      "name": "Funda",
+      "url": "https://www.funda.nl/huur/amsterdam/",
+      "enabled": true
+    },
+    {
+      "name": "Huurwoningen",
+      "url": "https://www.huurwoningen.nl/in/amsterdam/",
+      "enabled": true
+    },
+    {
+      "name": "HousingAnywhere",
+      "url": "https://housinganywhere.com/s/Amsterdam--Netherlands",
+      "enabled": true
+    }
+  ]
+}

@@ -1,37 +1,18 @@
 from __future__ import annotations
 
 import json
-import random
-import time
-from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
-from curl_cffi import requests as cf_requests
+
+from scrapers.http import fetch_html, page_delay
+from scrapers.listing import Listing
 
 DEFAULT_SEARCH_URL = "https://www.pararius.com/apartments/amsterdam"
 
-# Delay between paginated page fetches (deep scans).
-PAGE_DELAY_SEC = 2.0
-PAGE_DELAY_JITTER_SEC = 1.0
-
-# Browser TLS profiles; stick to one that works, rotate only after failure.
-IMPERSONATE_PROFILES = ("chrome131", "chrome124", "safari17_0")
-PROFILE_SWITCH_DELAY_SEC = 4.0
-FALLBACK_DELAY_SEC = 6.0
-
-_preferred_profile_index = 0
-
-
-@dataclass
-class Listing:
-    source: str
-    external_id: str
-    url: str
-    title: str
-    price_eur: int | None
-    city: str | None = None
+# Re-export for scripts that import from pararius.
+__all__ = ["Listing", "DEFAULT_SEARCH_URL", "fetch_html", "parse_file", "parse_listings", "scrape_search"]
 
 
 def page_url(base_url: str, page: int) -> str:
@@ -39,72 +20,6 @@ def page_url(base_url: str, page: int) -> str:
     if page <= 1:
         return base
     return f"{base}/page-{page}"
-
-
-def is_cloudflare_challenge(html: str) -> bool:
-    return "Just a moment" in html or "cf-browser-verification" in html
-
-
-def _fetch_with_curl_cffi(url: str, profile: str) -> str:
-    response = cf_requests.get(url, impersonate=profile, timeout=30, allow_redirects=True)
-    if response.status_code != 200 or is_cloudflare_challenge(response.text):
-        raise RuntimeError(f"Blocked or bad response ({response.status_code}) for profile {profile}")
-    return response.text
-
-
-def _fetch_with_cloudscraper(url: str) -> str:
-    import cloudscraper
-
-    scraper = cloudscraper.create_scraper(
-        browser={"browser": "chrome", "platform": "darwin", "mobile": False}
-    )
-    response = scraper.get(url, timeout=30)
-    if response.status_code != 200 or is_cloudflare_challenge(response.text):
-        raise RuntimeError(f"cloudscraper blocked or bad response ({response.status_code})")
-    return response.text
-
-
-def fetch_html(url: str) -> str:
-    """
-    Fetch a Pararius page defensively: prefer one working profile, switch slowly on failure.
-
-    At most 3 HTTP attempts per URL with pauses between them (not a rapid burst).
-    """
-    global _preferred_profile_index
-    errors: list[str] = []
-
-    primary = IMPERSONATE_PROFILES[_preferred_profile_index]
-    try:
-        html = _fetch_with_curl_cffi(url, primary)
-        return html
-    except Exception as exc:
-        errors.append(f"{primary}: {exc}")
-
-    time.sleep(PROFILE_SWITCH_DELAY_SEC)
-
-    alternate_index = (_preferred_profile_index + 1) % len(IMPERSONATE_PROFILES)
-    alternate = IMPERSONATE_PROFILES[alternate_index]
-    try:
-        html = _fetch_with_curl_cffi(url, alternate)
-        _preferred_profile_index = alternate_index
-        return html
-    except Exception as exc:
-        errors.append(f"{alternate}: {exc}")
-
-    time.sleep(FALLBACK_DELAY_SEC)
-
-    try:
-        html = _fetch_with_cloudscraper(url)
-        return html
-    except Exception as exc:
-        errors.append(f"cloudscraper: {exc}")
-
-    raise RuntimeError(f"Fetch failed for {url}: {' | '.join(errors)}")
-
-
-def _page_delay() -> None:
-    delay = PAGE_DELAY_SEC + random.uniform(0, PAGE_DELAY_JITTER_SEC)
-    time.sleep(delay)
 
 
 def has_next_page(html: str) -> bool:
@@ -178,7 +93,7 @@ def scrape_search(base_url: str = DEFAULT_SEARCH_URL, *, max_pages: int | None =
             break
 
         page += 1
-        _page_delay()
+        page_delay()
 
     return listings
 

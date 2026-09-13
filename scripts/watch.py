@@ -9,8 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from config.load import DEFAULT_SOURCES_PATH, enabled_sources
 from db.db import get_connection, init_db, sync_listings, upsert_listings
-from scrapers.pararius import DEFAULT_SEARCH_URL, scrape_search
+from notify import notify_new_listings
+from scrapers.registry import scrape_source
 
 MAX_DETECTION_BUDGET_SEC = 300
 POLL_INTERVAL_MIN_SEC = 45
@@ -38,13 +40,13 @@ def _print_removed_listings(removed) -> None:
 
 def _run_poll(
     conn,
-    url: str,
+    source,
     *,
     max_pages: int | None,
     label: str,
     full_sync: bool,
 ) -> tuple[int, int, int]:
-    listings = scrape_search(url, max_pages=max_pages)
+    listings = scrape_source(source, max_pages=max_pages)
 
     if full_sync:
         new_listings, removed = sync_listings(conn, listings)
@@ -53,10 +55,11 @@ def _run_poll(
         removed = []
 
     print(
-        f"[{_now()}] {label}: parsed {len(listings)}, "
+        f"[{_now()}] {label} [{source.name}]: parsed {len(listings)}, "
         f"new {len(new_listings)}, removed {len(removed)}"
     )
     _print_new_listings(new_listings)
+    notify_new_listings(new_listings)
     _print_removed_listings(removed)
     return len(listings), len(new_listings), len(removed)
 
@@ -85,20 +88,12 @@ def _sleep_until_next_poll(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Watch Pararius for new listings (bootstrap full sync + fast polls)"
-    )
-    parser.add_argument("--url", default=DEFAULT_SEARCH_URL, help="Pararius search URL")
-    parser.add_argument(
-        "--poll-min",
-        type=int,
-        default=POLL_INTERVAL_MIN_SEC,
-        help=f"Minimum seconds between fast polls (default: {POLL_INTERVAL_MIN_SEC})",
+        description="Watch configured sources for new listings (bootstrap + fast polls)"
     )
     parser.add_argument(
-        "--poll-max",
-        type=int,
-        default=POLL_INTERVAL_MAX_SEC,
-        help=f"Maximum seconds between fast polls (default: {POLL_INTERVAL_MAX_SEC})",
+        "--config",
+        default=str(DEFAULT_SOURCES_PATH),
+        help="Path to sources JSON (default: config/sources.json)",
     )
     parser.add_argument(
         "--deep-interval",
@@ -113,28 +108,42 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.poll_min > args.poll_max:
-        parser.error("--poll-min must be <= --poll-max")
-    if args.poll_max > MAX_DETECTION_BUDGET_SEC:
+    if POLL_INTERVAL_MIN_SEC > POLL_INTERVAL_MAX_SEC:
+        parser.error("POLL_INTERVAL_MIN_SEC must be <= POLL_INTERVAL_MAX_SEC")
+    if POLL_INTERVAL_MAX_SEC > MAX_DETECTION_BUDGET_SEC:
         parser.error(
-            f"--poll-max must be <= {MAX_DETECTION_BUDGET_SEC}s (detection budget)"
+            f"POLL_INTERVAL_MAX_SEC must be <= {MAX_DETECTION_BUDGET_SEC} (detection budget)"
         )
+
+    sources = enabled_sources(args.config)
+    if not sources:
+        parser.error("No enabled sources in config")
 
     conn = get_connection()
     init_db(conn)
 
-    print(f"[{_now()}] Watching {args.url}")
+    source_names = ", ".join(source.name for source in sources)
+    print(f"[{_now()}] Watching {len(sources)} source(s): {source_names}")
+    for source in sources:
+        print(f"  - {source.name}: {source.url}")
 
     if not args.skip_bootstrap:
         print(f"[{_now()}] Bootstrap: scraping all pages and syncing DB...")
-        try:
-            _run_poll(conn, args.url, max_pages=None, label="bootstrap", full_sync=True)
-        except Exception as exc:
-            print(f"[{_now()}] Bootstrap failed: {exc}")
-            raise SystemExit(1) from exc
+        for source in sources:
+            try:
+                _run_poll(
+                    conn,
+                    source,
+                    max_pages=None,
+                    label="bootstrap",
+                    full_sync=True,
+                )
+            except Exception as exc:
+                print(f"[{_now()}] Bootstrap failed for {source.name}: {exc}")
+                raise SystemExit(1) from exc
 
     print(
-        f"[{_now()}] Fast poll: page 1 every {args.poll_min}–{args.poll_max}s (randomized) | "
+        f"[{_now()}] Fast poll: page 1 every {POLL_INTERVAL_MIN_SEC}–{POLL_INTERVAL_MAX_SEC}s (randomized) | "
         f"Full sync: {'off' if args.deep_interval == 0 else f'every {args.deep_interval}s when healthy'}"
     )
 
@@ -161,21 +170,27 @@ def main() -> None:
                 max_pages = 1
                 full_sync = False
 
-            try:
-                _run_poll(
-                    conn,
-                    url=args.url,
-                    max_pages=max_pages,
-                    label=label,
-                    full_sync=full_sync,
-                )
-                consecutive_failures = 0
-                if due_for_deep:
-                    last_deep_at = time.monotonic()
-            except Exception as exc:
+            loop_failed = False
+            for source in sources:
+                try:
+                    _run_poll(
+                        conn,
+                        source,
+                        max_pages=max_pages,
+                        label=label,
+                        full_sync=full_sync,
+                    )
+                except Exception as exc:
+                    loop_failed = True
+                    print(f"[{_now()}] {label} failed for {source.name}: {exc}")
+
+            if loop_failed:
                 consecutive_failures += 1
                 extra_delay = _failure_backoff_sec(consecutive_failures)
-                print(f"[{_now()}] {label} failed ({consecutive_failures} in a row): {exc}")
+                print(
+                    f"[{_now()}] Poll cycle had failures "
+                    f"({consecutive_failures} in a row)"
+                )
                 if extra_delay:
                     print(f"[{_now()}] Backing off an extra {extra_delay}s before next poll")
                 if consecutive_failures >= PAUSE_AFTER_FAILURES:
@@ -183,11 +198,15 @@ def main() -> None:
                         f"[{_now()}] Many failures — staying in slow mode. "
                         "Consider waiting before restarting or checking your network."
                     )
+            else:
+                consecutive_failures = 0
+                if due_for_deep:
+                    last_deep_at = time.monotonic()
 
             _sleep_until_next_poll(
                 loop_start,
-                poll_min=args.poll_min,
-                poll_max=args.poll_max,
+                poll_min=POLL_INTERVAL_MIN_SEC,
+                poll_max=POLL_INTERVAL_MAX_SEC,
                 extra_delay=extra_delay,
             )
     except KeyboardInterrupt:
