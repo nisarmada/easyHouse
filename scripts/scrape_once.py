@@ -1,14 +1,29 @@
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from config.load import DEFAULT_SOURCES_PATH, enabled_sources, get_source
-from db.db import get_connection, init_db, sync_listings, upsert_listings
+from config.load import DEFAULT_SOURCES_PATH, get_source
+from config.search import load_search
+from config.search_service import filter_listings_by_radius
+from db.db import get_connection, init_db, upsert_listings
 from notify import notify_new_listings
 from scrapers.pararius import parse_file
-from scrapers.registry import scrape_source
+from services.scrape_runner import run_scrape
+
+
+def _print_new_listings(listings) -> None:
+    for listing in listings:
+        price = f"€{listing.price_eur:,}" if listing.price_eur else "?"
+        print(f"NEW  {price:>10}  {listing.title}  {listing.url}")
+
+
+def _print_removed_listings(removed) -> None:
+    for row in removed:
+        print(f"GONE             {row['title']}  {row['url']}")
 
 
 def main() -> None:
@@ -39,31 +54,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.source:
-        sources = [get_source(args.source, args.config)]
-    else:
-        sources = enabled_sources(args.config)
-        if not sources:
-            parser.error("No enabled sources in config")
-
-    conn = get_connection()
-    init_db(conn)
-
     if args.file:
+        search = load_search()
+        conn = get_connection()
+        init_db(conn)
         listings = parse_file(args.file)
-        if args.source:
-            search_id = get_source(args.source, args.config).id
-            for listing in listings:
-                listing.search_id = search_id
+        for listing in listings:
+            listing.search_id = search.id
+            if not listing.city:
+                listing.city = search.city
         new_listings = upsert_listings(conn, listings)
-        removed = []
         print(f"Parsed {len(listings)} listings")
         print(f"New: {len(new_listings)}")
-        print(f"Removed: {len(removed)}\n")
-        for listing in new_listings:
-            price = f"€{listing.price_eur:,}" if listing.price_eur else "?"
-            print(f"NEW  {price:>10}  {listing.title}  {listing.url}")
-        notify_new_listings(new_listings)
+        print(f"Removed: 0\n")
+        _print_new_listings(new_listings)
+        notify_new_listings(filter_listings_by_radius(conn, new_listings))
         return
 
     if args.max_pages is not None and not args.no_sync:
@@ -72,27 +77,27 @@ def main() -> None:
             "Omit --max-pages (scrape all) or pass --no-sync."
         )
 
-    for source in sources:
-        print(f"\n=== {source.name} ===")
-        print(source.url)
-        listings = scrape_source(source, max_pages=args.max_pages)
-        if args.no_sync:
-            new_listings = upsert_listings(conn, listings)
-            removed = []
-        else:
-            new_listings, removed = sync_listings(conn, listings)
+    try:
+        results = run_scrape(
+            source_id=args.source,
+            max_pages=args.max_pages,
+            full_sync=not args.no_sync,
+            config_path=args.config,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
-        print(f"Parsed {len(listings)} listings")
-        print(f"New: {len(new_listings)}")
-        print(f"Removed: {len(removed)}\n")
+    for result in results:
+        print(f"\n=== {result.source_name} ===")
+        if result.error:
+            print(f"ERROR: {result.error}")
+            continue
 
-        for listing in new_listings:
-            price = f"€{listing.price_eur:,}" if listing.price_eur else "?"
-            print(f"NEW  {price:>10}  {listing.title}  {listing.url}")
-        notify_new_listings(new_listings)
-
-        for row in removed:
-            print(f"GONE             {row['title']}  {row['url']}")
+        print(f"Parsed {result.parsed} listings")
+        print(f"New: {result.new_count}")
+        print(f"Removed: {result.removed_count}\n")
+        _print_new_listings(result.new_listings)
+        _print_removed_listings(result.removed)
 
 
 if __name__ == "__main__":

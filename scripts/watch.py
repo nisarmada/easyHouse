@@ -10,9 +10,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config.load import DEFAULT_SOURCES_PATH, enabled_sources
-from db.db import get_connection, init_db, sync_listings, upsert_listings
-from notify import notify_new_listings
-from scrapers.registry import scrape_source
+from config.search_service import filter_listings_by_radius
+from db.db import get_connection, init_db
+from services.scrape_runner import scrape_and_store
 
 MAX_DETECTION_BUDGET_SEC = 300
 POLL_INTERVAL_MIN_SEC = 45
@@ -46,22 +46,19 @@ def _run_poll(
     label: str,
     full_sync: bool,
 ) -> tuple[int, int, int]:
-    listings = scrape_source(source, max_pages=max_pages)
-
-    if full_sync:
-        new_listings, removed = sync_listings(conn, listings)
-    else:
-        new_listings = upsert_listings(conn, listings)
-        removed = []
-
-    print(
-        f"[{_now()}] {label} [{source.name}]: parsed {len(listings)}, "
-        f"new {len(new_listings)}, removed {len(removed)}"
+    result = scrape_and_store(
+        conn,
+        source,
+        max_pages=max_pages,
+        full_sync=full_sync,
     )
-    _print_new_listings(new_listings)
-    notify_new_listings(new_listings)
-    _print_removed_listings(removed)
-    return len(listings), len(new_listings), len(removed)
+    print(
+        f"[{_now()}] {label} [{source.name}]: parsed {result.parsed}, "
+        f"new {result.new_count}, removed {result.removed_count}"
+    )
+    _print_new_listings(filter_listings_by_radius(conn, result.new_listings))
+    _print_removed_listings(result.removed)
+    return result.parsed, result.new_count, result.removed_count
 
 
 def _failure_backoff_sec(consecutive_failures: int) -> int:

@@ -11,9 +11,6 @@ from scrapers.listing import Listing
 
 DEFAULT_SEARCH_URL = "https://www.pararius.com/apartments/amsterdam"
 
-# Re-export for scripts that import from pararius.
-__all__ = ["Listing", "DEFAULT_SEARCH_URL", "fetch_html", "parse_file", "parse_listings", "scrape_search"]
-
 
 def page_url(base_url: str, page: int) -> str:
     base = base_url.rstrip("/")
