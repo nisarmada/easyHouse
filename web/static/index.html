@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>easyHouse</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-icon">⌂</span>
+          <div>
+            <strong>easyHouse</strong>
+            <small>Rental watcher</small>
+          </div>
+        </div>
+        <nav class="nav">
+          <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+          <button class="nav-btn" data-view="search">Search area</button>
+          <button class="nav-btn" data-view="listings">Listings</button>
+          <button class="nav-btn" data-view="sources">Platforms</button>
+          <button class="nav-btn" data-view="settings">Settings</button>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="scrape-btn" class="primary-btn">Scrape now</button>
+          <button id="full-sync-btn" class="ghost-btn">Full sync</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="view-title">Dashboard</h1>
+            <p id="view-subtitle">Overview of your rental search</p>
+          </div>
+          <div id="job-status" class="job-status hidden"></div>
+        </header>
+
+        <section id="view-dashboard" class="view active">
+          <article id="search-summary" class="search-summary panel"></article>
+          <div id="stats-grid" class="stats-grid"></div>
+          <div class="panels">
+            <article class="panel">
+              <h2>By source</h2>
+              <div id="source-chart" class="bar-list"></div>
+            </article>
+            <article class="panel">
+              <h2>By city</h2>
+              <div id="city-chart" class="bar-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-search" class="view">
+          <article class="panel search-panel">
+            <h2>Search area</h2>
+            <p class="muted">Pick a Dutch city and how far from the center you want to search. Listings outside this radius are hidden.</p>
+            <div class="search-form">
+              <label>
+                City
+                <input id="search-city" type="text" placeholder="Amsterdam" />
+              </label>
+              <label>
+                Radius: <span id="radius-value">10</span> km
+                <input id="search-radius" type="range" min="1" max="50" step="1" value="10" />
+              </label>
+              <button id="save-search-btn" class="primary-btn">Save search area</button>
+            </div>
+            <p id="search-center-info" class="muted"></p>
+          </article>
+        </section>
+
+        <section id="view-listings" class="view">
+          <div class="toolbar">
+            <input id="listing-search" type="search" placeholder="Search title, city, street…" />
+            <select id="listing-source-filter">
+              <option value="">All sources</option>
+            </select>
+          </div>
+          <div id="listings-table-wrap" class="table-wrap"></div>
+          <div class="pagination">
+            <button id="prev-page" class="ghost-btn">Previous</button>
+            <span id="page-info"></span>
+            <button id="next-page" class="ghost-btn">Next</button>
+          </div>
+        </section>
+
+        <section id="view-sources" class="view">
+          <div class="toolbar">
+            <p>Enable or disable platforms. URLs are built automatically from your search city.</p>
+            <button id="add-source-btn" class="ghost-btn">Add platform</button>
+          </div>
+          <div id="sources-list" class="sources-list"></div>
+          <div class="toolbar end">
+            <button id="save-sources-btn" class="primary-btn">Save sources</button>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view">
+          <article class="panel">
+            <h2>Notifications</h2>
+            <p class="muted">Channels are configured via environment variables on the server.</p>
+            <div id="notification-cards" class="notification-cards"></div>
+          </article>
+          <article class="panel">
+            <h2>CLI commands</h2>
+            <pre class="code-block">python scripts/watch.py
+python scripts/scrape_once.py
+python scripts/serve.py</pre>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

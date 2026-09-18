@@ -1,4 +1,6 @@
 beautifulsoup4
 cloudscraper
 curl_cffi
+fastapi
 pytest
+uvicorn[standard]
