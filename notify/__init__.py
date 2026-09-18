@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import smtplib
 import urllib.error
 import urllib.parse
 import urllib.request
 
+from notify.email import notify_email
 from scrapers.listing import Listing
 
 
@@ -81,10 +83,15 @@ def notify_new_listings(listings: list[Listing]) -> None:
         return
 
     errors: list[str] = []
-    for name, sender in (("telegram", _notify_telegram), ("webhook", _notify_webhook)):
+    channels = (
+        ("email", notify_email),
+        ("telegram", _notify_telegram),
+        ("webhook", _notify_webhook),
+    )
+    for name, sender in channels:
         try:
             sender(listings)
-        except (urllib.error.URLError, RuntimeError, TimeoutError) as exc:
+        except (urllib.error.URLError, RuntimeError, TimeoutError, OSError, smtplib.SMTPException) as exc:
             errors.append(f"{name}: {exc}")
 
     if errors:
