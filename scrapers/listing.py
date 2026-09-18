@@ -15,3 +15,5 @@ class Listing:
     street: str | None = None
     house_number: str | None = None
     postcode: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None

@@ -4,6 +4,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
+from geo.geocode import geocode_listing
 from scrapers.address import enrich_listing, keys_for, primary_key
 from scrapers.listing import Listing
 
@@ -100,9 +101,39 @@ def init_db(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_canonical_listings_weak "
         "ON canonical_listings(listing_key_weak)"
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            query       TEXT PRIMARY KEY,
+            latitude    REAL NOT NULL,
+            longitude   REAL NOT NULL,
+            cached_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    _ensure_coordinate_columns(conn)
     conn.commit()
     _migrate_legacy_listings(conn)
     _backfill_search_id(conn)
+
+
+def _ensure_coordinate_columns(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(canonical_listings)")}
+    if "latitude" not in columns:
+        conn.execute("ALTER TABLE canonical_listings ADD COLUMN latitude REAL")
+    if "longitude" not in columns:
+        conn.execute("ALTER TABLE canonical_listings ADD COLUMN longitude REAL")
+
+
+def _resolve_coordinates(
+    conn: sqlite3.Connection,
+    listing: Listing,
+) -> tuple[float | None, float | None]:
+    return geocode_listing(
+        conn,
+        street=listing.street,
+        house_number=listing.house_number,
+        postcode=listing.postcode,
+        city=listing.city,
+    )
 
 
 def _find_canonical_id(
@@ -139,8 +170,8 @@ def _create_canonical(
         """
         INSERT INTO canonical_listings (
             id, listing_key, listing_key_weak, title, price_eur, city,
-            postcode, street, house_number, best_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            postcode, street, house_number, best_url, latitude, longitude
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             canonical_id,
@@ -153,6 +184,8 @@ def _create_canonical(
             listing.street,
             listing.house_number,
             listing.url,
+            listing.latitude,
+            listing.longitude,
         ),
     )
     return canonical_id
@@ -177,6 +210,8 @@ def _upgrade_canonical(
             street = COALESCE(?, street),
             house_number = COALESCE(?, house_number),
             best_url = ?,
+            latitude = COALESCE(?, latitude),
+            longitude = COALESCE(?, longitude),
             last_seen_at = datetime('now')
         WHERE id = ?
         """,
@@ -190,6 +225,8 @@ def _upgrade_canonical(
             listing.street,
             listing.house_number,
             listing.url,
+            listing.latitude,
+            listing.longitude,
             canonical_id,
         ),
     )
@@ -201,6 +238,9 @@ def _upsert_one(conn: sqlite3.Connection, listing: Listing) -> bool:
     Returns True when this is the first time the canonical listing was seen.
     """
     enrich_listing(listing)
+    latitude, longitude = _resolve_coordinates(conn, listing)
+    listing.latitude = latitude
+    listing.longitude = longitude
     strong_key, weak_key = keys_for(listing)
 
     canonical_id = _find_canonical_id(conn, strong_key, weak_key)

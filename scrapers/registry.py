@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from config.load import SourceConfig
+from config.search import load_search
 from scrapers.funda import scrape_search as scrape_funda
 from scrapers.housinganywhere import scrape_search as scrape_housinganywhere
 from scrapers.huurwoningen import scrape_search as scrape_huurwoningen
@@ -22,7 +23,10 @@ def scrape_source(source: SourceConfig, *, max_pages: int | None = None) -> list
     if scraper is None:
         raise ValueError(f"Unsupported source type: {source.type!r}")
 
+    search = load_search()
     listings = scraper(source.url, max_pages=max_pages)
     for listing in listings:
-        listing.search_id = source.id
+        listing.search_id = search.id
+        if not listing.city:
+            listing.city = search.city
     return listings
