@@ -4,4 +4,12 @@ __pycache__/
 
 pararius.html
 easyhouse.db
+build/
+dist/
+*.spec.bak
+cloudflare/auth-worker/node_modules/
+.wrangler/
+.cursor/
+.agents/
+skills-lock.json
 

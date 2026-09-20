@@ -16,7 +16,7 @@ Supported platforms:
 - **City + radius search** — geocode listings and filter by distance from city center
 - **Cross-site dedup** — the same flat on Pararius and Funda is stored once, with one alert
 - **Web control panel** — set search area, browse listings, trigger scrapes, manage platforms
-- **Notifications** — optional email, Telegram, or webhook alerts (respecting the radius filter)
+- **Notifications** — optional email alerts (respecting the radius filter)
 - **Fast watcher** — bootstrap full scrape, then randomized page-1 polls with periodic full sync
 
 ## Project layout
@@ -26,10 +26,10 @@ config/          search.json (city + radius), sources.json (enabled platforms)
 geo/             geocoding (Nominatim) and haversine distance
 scrapers/        per-platform parsers
 db/              SQLite schema, upsert/dedup, query helpers
-notify/          email, Telegram, webhook notifications
+notify/          email notifications
 services/        shared scrape runner (used by CLI and web UI)
 web/             FastAPI API + static dashboard
-scripts/         CLI: scrape_once, watch, serve, test_scrapers
+scripts/         CLI: agent, scrape_once, watch, serve, test_scrapers
 tests/           unit tests (pytest)
 ```
 
@@ -41,27 +41,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Configure your search area in [`config/search.json`](config/search.json):
+On first run, easyHouse creates a local data directory at `~/.easyhouse/` with default config, SQLite database, and notification settings. Configure everything from the dashboard — no manual JSON editing required.
 
-```json
-{
-  "city": "Amsterdam",
-  "radius_km": 10
-}
-```
-
-Enable platforms in [`config/sources.json`](config/sources.json). You only pick platform names and on/off — URLs are generated from the city:
-
-```json
-{
-  "platforms": [
-    { "name": "Pararius", "type": "pararius", "enabled": true },
-    { "name": "Funda", "type": "funda", "enabled": true }
-  ]
-}
-```
-
-Legacy configs with a `sources` array (manual URLs) are migrated automatically on first load.
+Override the data directory with `EASYHOUSE_HOME=/path/to/data`.
 
 ## Usage
 
@@ -79,21 +61,52 @@ Parse saved HTML offline (Pararius only):
 python scripts/scrape_once.py --file pararius.html
 ```
 
-### Continuous watcher
+### Agent (recommended)
 
-Bootstrap (full scrape + sync), then fast page-1 polls every 45–90 s with a full sync every 30 min:
+One process: background watcher + web dashboard. Scraping runs from your machine; open the dashboard to configure and browse listings.
+
+```bash
+.venv/bin/python scripts/agent.py --open-browser
+```
+
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080) for the landing page. **Get started** takes you to the search area picker at `/app?view=search`.
+
+If the browser did not open automatically, visit that URL manually.
+
+| Flag | Purpose |
+|------|---------|
+| `--open-browser` | Open the dashboard on startup |
+| `--skip-bootstrap` | Skip the initial full scrape |
+| `--deep-interval SECS` | Full sync interval (default: 1800, `0` disables) |
+| `--install-autostart` | Start easyHouse automatically at login |
+| `--uninstall-autostart` | Remove autostart entry |
+
+On first run the agent bootstraps a full scrape, then fast page-1 polls every 45–90 s with a full sync every 30 min. Press Ctrl+C to stop.
+
+**Start at login:** run `--install-autostart` once, or use **Settings → Start at login** in the dashboard.
+
+### Standalone build (no Python install)
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python scripts/build.py
+./dist/easyhouse --open-browser
+```
+
+### Continuous watcher (CLI only)
+
+Watcher without the web UI:
 
 ```bash
 python scripts/watch.py
 python scripts/watch.py --skip-bootstrap
 ```
 
-### Web control panel
+### Web control panel (UI only)
 
-Use the project venv — system Python won't have the dependencies:
+Dashboard without the background watcher:
 
 ```bash
-.venv/bin/pip install -r requirements.txt
 .venv/bin/python scripts/serve.py
 ```
 
@@ -128,41 +141,55 @@ python scripts/test_scrapers.py
 
 ## Notifications
 
-When new listings are found, optional notifications can be sent via environment variables. All channels respect the radius filter.
+1. Open **Settings** in the dashboard
+2. **Create an account** with your email and a password
+3. Enter the **6-digit verification code** sent to your inbox
+4. Toggle **Email alerts** on
 
-### Email (SMTP)
+Alerts only go to verified accounts — you cannot register someone else's email without access to their inbox.
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `NOTIFY_EMAIL` | yes | Recipient address |
-| `SMTP_HOST` | yes | SMTP server hostname |
-| `SMTP_PORT` | no | Port (default: `587`) |
-| `SMTP_USER` | no | Login username |
-| `SMTP_PASSWORD` | no | Login password or app password |
-| `SMTP_FROM` | no | From address (defaults to `SMTP_USER`) |
-| `SMTP_USE_TLS` | no | Use STARTTLS (default: `true`) |
+### Cloud auth (recommended)
 
-Example (Gmail app password):
+Scraping stays local. Signup, verification codes, and alert emails go through a small **Cloudflare Worker** (free tier) so users never configure SMTP.
+
+**One-time deploy (maintainer):**
 
 ```bash
-export NOTIFY_EMAIL="you@gmail.com"
-export SMTP_HOST="smtp.gmail.com"
-export SMTP_PORT="587"
-export SMTP_USER="you@gmail.com"
-export SMTP_PASSWORD="your-app-password"
+cd cloudflare/auth-worker
+npm install
+npx wrangler login
+npx wrangler d1 create easyhouse-auth
+# Paste database_id into cloudflare/auth-worker/wrangler.jsonc
+export SMTP_USER=you@gmail.com
+export SMTP_PASSWORD=your-gmail-app-password
 export SMTP_FROM="easyHouse <you@gmail.com>"
-python scripts/watch.py
+./scripts/deploy_auth_worker.sh
 ```
 
-### Other channels
+This saves the worker URL to `~/.easyhouse/auth.json`. Users can also set:
+
+```bash
+python scripts/set_auth_url.py https://easyhouse-auth.YOUR.workers.dev
+# or
+export EASYHOUSE_AUTH_URL=https://easyhouse-auth.YOUR.workers.dev
+```
+
+**GitHub Pages** hosts the public landing site from `docs/` (see `.github/workflows/pages.yml`).
+
+### Local-only fallback
+
+If no auth URL is configured, the agent falls back to local SQLite auth. You can still configure SMTP under **Settings → Email delivery** or via:
 
 | Variable | Purpose |
 |----------|---------|
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID |
-| `NOTIFY_WEBHOOK_URL` | POST JSON payload to a custom webhook |
+| `EASYHOUSE_SMTP_HOST` | SMTP server hostname |
+| `EASYHOUSE_SMTP_PORT` | Port (default: `587`) |
+| `EASYHOUSE_SMTP_FROM` | From address |
+| `EASYHOUSE_SMTP_USER` | Login username (optional) |
+| `EASYHOUSE_SMTP_PASSWORD` | Login password (optional) |
+| `EASYHOUSE_SMTP_USE_TLS` | Use STARTTLS (default: `true`) |
 
-If none are set, output stays on stdout only.
+If no account is signed in or email is not verified, new listings are logged to stdout only.
 
 ## How it works
 
@@ -176,4 +203,4 @@ If none are set, output stays on stdout only.
 
 - **Funda** only exposes ~15 listings in static HTML. Results beyond that are mostly JS-rendered, so full coverage is limited without a browser.
 - **Sync safety** — full sync deletes listings missing from a complete scrape. Fast polls (`watch.py`) only upsert page 1 and never delete.
-- Database file: `easyhouse.db` (gitignored).
+- User data lives in `~/.easyhouse/` (database, config, email settings).
