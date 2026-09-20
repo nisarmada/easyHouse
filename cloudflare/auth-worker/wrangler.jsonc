@@ -1,0 +1,21 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "easyhouse-auth",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-09-20",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "easyhouse-auth",
+			"database_id": "e63f5a42-fc02-4ca6-9484-2514baee0d2c"
+		}
+	],
+	"vars": {
+		"SMTP_HOST": "smtp.gmail.com",
+		"SMTP_PORT": "465",
+		"SMTP_FROM": "easyHouse <noreply@easyhouse.app>"
+	}
+}
