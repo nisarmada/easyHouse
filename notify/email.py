@@ -1,43 +1,41 @@
 from __future__ import annotations
 
-import os
 import smtplib
-from dataclasses import dataclass
 from email.message import EmailMessage
 
-
-@dataclass(frozen=True)
-class EmailConfig:
-    host: str
-    port: int
-    to_address: str
-    from_address: str
-    username: str | None = None
-    password: str | None = None
-    use_tls: bool = True
+from db.db import get_connection, init_db
+from notify.smtp_config import ServiceSmtpConfig, load_service_smtp_config
 
 
-def load_email_config() -> EmailConfig | None:
-    to_address = os.environ.get("NOTIFY_EMAIL", "").strip()
-    host = os.environ.get("SMTP_HOST", "").strip()
-    if not to_address or not host:
-        return None
+def send_service_email(
+    *,
+    to_address: str,
+    subject: str,
+    plain_body: str,
+    html_body: str | None = None,
+    config: ServiceSmtpConfig | None = None,
+) -> None:
+    smtp = config or load_service_smtp_config()
+    if smtp is None:
+        raise RuntimeError(
+            "Email delivery is not configured. "
+            "Add SMTP settings under Settings → Email delivery."
+        )
 
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    username = os.environ.get("SMTP_USER", "").strip() or None
-    password = os.environ.get("SMTP_PASSWORD", "").strip() or None
-    from_address = os.environ.get("SMTP_FROM", "").strip() or username or "easyhouse@localhost"
-    use_tls = os.environ.get("SMTP_USE_TLS", "true").lower() not in {"0", "false", "no"}
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = smtp.from_address
+    message["To"] = to_address
+    message.set_content(plain_body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
 
-    return EmailConfig(
-        host=host,
-        port=port,
-        to_address=to_address,
-        from_address=from_address,
-        username=username,
-        password=password,
-        use_tls=use_tls,
-    )
+    with smtplib.SMTP(smtp.host, smtp.port, timeout=30) as client:
+        if smtp.use_tls:
+            client.starttls()
+        if smtp.username and smtp.password:
+            client.login(smtp.username, smtp.password)
+        client.send_message(message)
 
 
 def _format_listing_plain(listing) -> str:
@@ -66,40 +64,58 @@ def _escape_html(value: str) -> str:
     )
 
 
-def build_email(listings: list, *, config: EmailConfig) -> EmailMessage:
+def notify_email(listings: list) -> None:
+    if not listings:
+        return
+
+    from auth.local_cache import load_session_token
+    from auth.remote import RemoteAuthError, remote_notify
+    from auth.service import get_active_notification_email
+    from config.paths import remote_auth_enabled
+
+    conn = get_connection()
+    init_db(conn)
+    to_address = get_active_notification_email(conn)
+    if not to_address:
+        return
+
+    if remote_auth_enabled():
+        token = load_session_token()
+        if not token:
+            return
+        payload = [
+            {
+                "title": listing.title,
+                "price_eur": listing.price_eur,
+                "city": listing.city,
+                "url": listing.url,
+            }
+            for listing in listings
+        ]
+        try:
+            remote_notify(token, payload)
+        except RemoteAuthError as exc:
+            print(f"Notification warning: could not send alert email: {exc}")
+        return
+
+    config = load_service_smtp_config()
+    if config is None:
+        print("Notification warning: email delivery is not configured")
+        return
+
     count = len(listings)
     subject = f"easyHouse: {count} new listing{'s' if count != 1 else ''}"
-
     plain_lines = [_format_listing_plain(listing) for listing in listings]
     plain_body = f"{count} new listing{'s' if count != 1 else ''}\n\n" + "\n\n".join(plain_lines)
-
     html_body = (
         f"<html><body><p>{count} new listing{'s' if count != 1 else ''}</p>"
         + "".join(_format_listing_html(listing) for listing in listings)
         + "</body></html>"
     )
-
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = config.from_address
-    message["To"] = config.to_address
-    message.set_content(plain_body)
-    message.add_alternative(html_body, subtype="html")
-    return message
-
-
-def send_email(message: EmailMessage, *, config: EmailConfig) -> None:
-    with smtplib.SMTP(config.host, config.port, timeout=30) as smtp:
-        if config.use_tls:
-            smtp.starttls()
-        if config.username and config.password:
-            smtp.login(config.username, config.password)
-        smtp.send_message(message)
-
-
-def notify_email(listings: list) -> None:
-    config = load_email_config()
-    if config is None:
-        return
-    message = build_email(listings, config=config)
-    send_email(message, config=config)
+    send_service_email(
+        to_address=to_address,
+        subject=subject,
+        plain_body=plain_body,
+        html_body=html_body,
+        config=config,
+    )
