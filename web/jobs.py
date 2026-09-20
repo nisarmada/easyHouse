@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from services.scrape_coordination import cancel_current_scrape
 from services.scrape_runner import ScrapeResult, run_scrape
 
 
@@ -36,6 +37,7 @@ class JobManager:
         max_pages: int | None = 1,
         full_sync: bool = False,
     ) -> Job:
+        cancel_current_scrape()
         job = Job(
             id=str(uuid.uuid4()),
             params={
@@ -67,14 +69,14 @@ class JobManager:
             job.status = "running"
 
         try:
-            results = run_scrape(
+            outcome = run_scrape(
                 source_id=job.params.get("source_id"),
                 max_pages=job.params.get("max_pages"),
                 full_sync=bool(job.params.get("full_sync")),
             )
             with self._lock:
-                job.results = [_result_to_dict(result) for result in results]
-                job.status = "completed"
+                job.results = [_result_to_dict(result) for result in outcome.results]
+                job.status = "cancelled" if outcome.cancelled else "completed"
                 job.finished_at = _now()
         except Exception as exc:
             with self._lock:

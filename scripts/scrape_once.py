@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from config.load import DEFAULT_SOURCES_PATH, get_source
+from config.paths import ensure_user_data, get_sources_path
 from config.search import load_search
 from config.search_service import filter_listings_by_radius
 from db.db import get_connection, init_db, upsert_listings
@@ -30,8 +30,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape configured sources and print new listings")
     parser.add_argument(
         "--config",
-        default=str(DEFAULT_SOURCES_PATH),
-        help="Path to sources JSON (default: config/sources.json)",
+        default=None,
+        help="Path to sources JSON (default: ~/.easyhouse/config/sources.json)",
     )
     parser.add_argument(
         "--source",
@@ -53,6 +53,8 @@ def main() -> None:
         help="Do not remove listings missing from this scrape (default: sync on full scrape)",
     )
     args = parser.parse_args()
+    ensure_user_data()
+    config_path = args.config or get_sources_path()
 
     if args.file:
         search = load_search()
@@ -78,16 +80,16 @@ def main() -> None:
         )
 
     try:
-        results = run_scrape(
+        outcome = run_scrape(
             source_id=args.source,
             max_pages=args.max_pages,
             full_sync=not args.no_sync,
-            config_path=args.config,
+            config_path=config_path,
         )
     except ValueError as exc:
         parser.error(str(exc))
 
-    for result in results:
+    for result in outcome.results:
         print(f"\n=== {result.source_name} ===")
         if result.error:
             print(f"ERROR: {result.error}")

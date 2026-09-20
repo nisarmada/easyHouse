@@ -8,7 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from config.load import DEFAULT_SOURCES_PATH, load_sources
+from config.load import load_sources
+from config.paths import ensure_user_data, get_sources_path
 from scrapers.registry import scrape_source
 
 
@@ -18,7 +19,8 @@ def run_once(source, *, max_pages: int) -> tuple[int, set[str]]:
 
 
 def main() -> int:
-    sources = load_sources(DEFAULT_SOURCES_PATH)
+    ensure_user_data()
+    sources = load_sources(get_sources_path())
     failures = 0
 
     for source in sources:
