@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>easyHouse</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/theme.css" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+  </head>
+  <body>
+    <div class="page-glow page-glow--left" aria-hidden="true"></div>
+    <div class="page-glow page-glow--right" aria-hidden="true"></div>
+
+    <div class="app">
+      <aside class="sidebar">
+        <a class="brand" href="/">
+          <span class="brand-icon">⌂</span>
+          <div>
+            <strong>easyHouse</strong>
+            <small>Rental watcher</small>
+          </div>
+        </a>
+        <nav class="nav">
+          <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+          <button class="nav-btn" data-view="search">Search area</button>
+          <button class="nav-btn" data-view="listings">Listings</button>
+          <button class="nav-btn" data-view="sources">Platforms</button>
+          <button class="nav-btn" data-view="settings">Settings</button>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="scrape-btn" class="primary-btn">Scrape now</button>
+          <button id="full-sync-btn" class="ghost-btn">Full sync</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="view-title">Dashboard</h1>
+            <p id="view-subtitle">Overview of your rental search</p>
+          </div>
+          <div id="job-status" class="job-status hidden"></div>
+        </header>
+
+        <section id="view-dashboard" class="view active">
+          <article id="search-summary" class="search-summary panel"></article>
+          <div class="dashboard-cta">
+            <button id="open-search-map-btn" class="primary-btn primary-btn--large" type="button">
+              Choose where to search
+            </button>
+            <p class="muted">Pick a city, optional neighborhood, and see your search radius on the map.</p>
+          </div>
+          <div id="stats-grid" class="stats-grid"></div>
+          <div class="panels">
+            <article class="panel">
+              <h2>By source</h2>
+              <div id="source-chart" class="bar-list"></div>
+            </article>
+            <article class="panel">
+              <h2>By city</h2>
+              <div id="city-chart" class="bar-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-search" class="view">
+          <article class="panel search-map-panel">
+            <h2>Where do you want to live?</h2>
+            <p class="muted">Select a city and optionally a neighborhood. Drag the slider to adjust how far you're willing to travel.</p>
+            <div class="search-map-layout">
+              <div class="search-map-controls">
+                <label>
+                  City
+                  <select id="search-city"></select>
+                </label>
+                <label>
+                  Neighborhood <span class="muted">(optional)</span>
+                  <select id="search-neighborhood">
+                    <option value="">Whole city</option>
+                  </select>
+                </label>
+                <label class="radius-control">
+                  Search radius: <strong id="radius-value">10</strong> km
+                  <input id="search-radius" type="range" min="1" max="30" step="1" value="10" />
+                </label>
+                <p id="search-center-info" class="muted"></p>
+                <button id="save-search-btn" class="primary-btn" type="button">Save search area</button>
+              </div>
+              <div id="search-map" class="search-map" aria-label="Search area map"></div>
+            </div>
+          </article>
+        </section>
+
+        <section id="view-listings" class="view">
+          <div class="toolbar">
+            <input id="listing-search" type="search" placeholder="Search title, city, street…" />
+            <select id="listing-source-filter">
+              <option value="">All sources</option>
+            </select>
+          </div>
+          <div id="listings-table-wrap" class="table-wrap"></div>
+          <div class="pagination">
+            <button id="prev-page" class="ghost-btn">Previous</button>
+            <span id="page-info"></span>
+            <button id="next-page" class="ghost-btn">Next</button>
+          </div>
+        </section>
+
+        <section id="view-sources" class="view">
+          <div class="toolbar">
+            <p>Enable or disable platforms. URLs are built automatically from your search city.</p>
+            <button id="add-source-btn" class="ghost-btn">Add platform</button>
+          </div>
+          <div id="sources-list" class="sources-list"></div>
+          <div class="toolbar end">
+            <button id="save-sources-btn" class="primary-btn">Save sources</button>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view">
+          <article class="panel">
+            <label class="toggle notifications-toggle">
+              <input id="notifications-enabled" type="checkbox" />
+              Enable email notifications
+            </label>
+
+            <div id="auth-active" class="hidden">
+              <p id="auth-verification-status" class="muted"></p>
+              <p><strong id="auth-email"></strong></p>
+              <div class="toolbar">
+                <button id="resend-verification-btn" type="button" class="ghost-btn hidden">Resend verification email</button>
+                <button id="logout-btn" type="button" class="ghost-btn">Sign out</button>
+              </div>
+            </div>
+
+            <p id="auth-status" class="muted"></p>
+          </article>
+          <article id="email-service-panel" class="panel">
+            <h2>Email delivery</h2>
+            <p class="muted">Required to send verification codes and rental alerts. Use a Gmail app password if you use Google.</p>
+            <div class="toolbar">
+              <button id="smtp-gmail-preset-btn" type="button" class="ghost-btn">Use Gmail preset</button>
+            </div>
+            <form id="email-service-form" class="auth-form">
+              <label>
+                SMTP host
+                <input id="smtp-host" type="text" placeholder="smtp.gmail.com" required />
+              </label>
+              <label>
+                SMTP port
+                <input id="smtp-port" type="number" min="1" max="65535" value="587" required />
+              </label>
+              <label>
+                From address
+                <input id="smtp-from" type="text" placeholder="easyHouse &lt;you@gmail.com&gt;" required />
+              </label>
+              <label>
+                Username
+                <input id="smtp-username" type="text" placeholder="you@gmail.com" autocomplete="username" />
+              </label>
+              <label>
+                App password
+                <input id="smtp-password" type="password" placeholder="Leave blank to keep saved password" autocomplete="current-password" />
+              </label>
+              <label class="toggle">
+                <input id="smtp-use-tls" type="checkbox" checked />
+                Use STARTTLS
+              </label>
+              <div class="toolbar end">
+                <button id="smtp-test-btn" type="button" class="ghost-btn">Send test email</button>
+                <button type="submit" class="primary-btn">Save email delivery</button>
+              </div>
+            </form>
+            <p id="email-service-status" class="muted"></p>
+          </article>
+          <article class="panel">
+            <h2>Data location</h2>
+            <pre id="data-paths" class="code-block">Loading…</pre>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="auth-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+      <div class="modal-backdrop" id="auth-modal-backdrop"></div>
+      <div class="modal-card panel">
+        <button type="button" class="modal-close" id="auth-modal-close" aria-label="Close">×</button>
+        <h2 id="auth-modal-title">Create an account</h2>
+        <p class="auth-modal-lead">
+          Create an account to receive email notifications. Your email will be used for rental alerts within your search area.
+        </p>
+        <div class="auth-tabs">
+          <button type="button" class="nav-btn auth-tab active" data-auth-tab="signup">Create account</button>
+          <button type="button" class="nav-btn auth-tab" data-auth-tab="login">Sign in</button>
+        </div>
+        <form id="signup-form" class="auth-form">
+          <label>
+            Email
+            <input id="signup-email" type="email" placeholder="you@gmail.com" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="signup-password" type="password" placeholder="At least 8 characters" autocomplete="new-password" required />
+          </label>
+          <button type="submit" class="primary-btn">Create account</button>
+        </form>
+        <form id="login-form" class="auth-form hidden">
+          <label>
+            Email
+            <input id="login-email" type="email" placeholder="you@gmail.com" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="login-password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="primary-btn">Sign in</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="verify-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title">
+      <div class="modal-backdrop" id="verify-modal-backdrop"></div>
+      <div class="modal-card panel">
+        <button type="button" class="modal-close" id="verify-modal-close" aria-label="Close">×</button>
+        <h2 id="verify-modal-title">Verify your email</h2>
+        <p class="auth-modal-lead">
+          We sent a 6-digit verification code to <strong id="verify-modal-email"></strong>.
+          Enter the code below to start receiving rental notifications.
+        </p>
+        <p id="verify-email-notice" class="verify-email-notice hidden">
+          Email delivery is not configured yet. Set up <strong>Settings → Email delivery</strong> first,
+          then click <strong>Resend code</strong>. Until then, check the agent terminal for your code.
+        </p>
+        <form id="verify-code-form" class="auth-form">
+          <label>
+            Verification code
+            <input
+              id="verify-code-input"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              placeholder="000000"
+              required
+            />
+          </label>
+          <button type="submit" class="primary-btn">Verify email</button>
+        </form>
+        <div class="toolbar">
+          <button id="verify-resend-btn" type="button" class="ghost-btn">Resend code</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
