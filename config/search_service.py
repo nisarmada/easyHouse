@@ -5,7 +5,7 @@ import sqlite3
 from config.search import SearchConfig, load_search, save_search
 from db.db import get_connection, init_db
 from geo.distance import haversine_km
-from geo.geocode import geocode_city
+from geo.geocode import geocode_search_area
 
 
 def get_active_search(conn: sqlite3.Connection | None = None) -> SearchConfig:
@@ -18,7 +18,7 @@ def get_active_search(conn: sqlite3.Connection | None = None) -> SearchConfig:
         conn = get_connection()
         init_db(conn)
 
-    coords = geocode_city(conn, search.city)
+    coords = geocode_search_area(conn, search.city, neighborhood=search.neighborhood)
     if coords is None:
         return search
 
@@ -27,6 +27,7 @@ def get_active_search(conn: sqlite3.Connection | None = None) -> SearchConfig:
         search.radius_km,
         center_lat=coords[0],
         center_lon=coords[1],
+        neighborhood=search.neighborhood,
     )
     if own_conn:
         conn.commit()
@@ -48,6 +49,10 @@ def listing_within_radius(
 
     distance = haversine_km(search.center_lat, search.center_lon, latitude, longitude)
     return distance <= search.radius_km
+
+
+def search_city_changed(before: SearchConfig, after: SearchConfig) -> bool:
+    return before.city.casefold() != after.city.casefold()
 
 
 def filter_listings_by_radius(conn: sqlite3.Connection, listings: list) -> list:

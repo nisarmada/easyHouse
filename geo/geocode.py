@@ -92,6 +92,20 @@ def geocode_city(conn: sqlite3.Connection, city: str) -> tuple[float, float] | N
     return geocode_query(conn, f"{city}, Netherlands")
 
 
+def geocode_search_area(
+    conn: sqlite3.Connection,
+    city: str,
+    *,
+    neighborhood: str | None = None,
+) -> tuple[float, float] | None:
+    cleaned_city = city.strip()
+    if not cleaned_city:
+        return None
+    if neighborhood and neighborhood.strip():
+        return geocode_query(conn, f"{neighborhood.strip()}, {cleaned_city}, Netherlands")
+    return geocode_city(conn, cleaned_city)
+
+
 def geocode_listing(
     conn: sqlite3.Connection,
     *,

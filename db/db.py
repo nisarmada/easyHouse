@@ -4,17 +4,27 @@ import sqlite3
 import uuid
 from pathlib import Path
 
+from config.paths import ensure_user_data, get_db_path
 from geo.geocode import geocode_listing
 from scrapers.address import enrich_listing, keys_for, primary_key
 from scrapers.listing import Listing
 
-DB_PATH = Path(__file__).resolve().parents[1] / "easyhouse.db"
+DB_PATH: Path | None = None
+
+
+def _resolve_db_path() -> Path:
+    if DB_PATH is not None:
+        return DB_PATH
+    return get_db_path()
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    ensure_user_data()
+    conn = sqlite3.connect(_resolve_db_path(), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 
@@ -68,6 +78,9 @@ def _migrate_legacy_listings(conn: sqlite3.Connection) -> None:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
+    from auth.store import init_accounts
+
+    init_accounts(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS canonical_listings (
             id              TEXT PRIMARY KEY,

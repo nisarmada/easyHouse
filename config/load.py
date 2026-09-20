@@ -6,10 +6,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from config.paths import ensure_user_data, get_sources_path
 from config.search import SearchConfig, build_platform_url, load_search
 
 CONFIG_DIR = Path(__file__).resolve().parent
 DEFAULT_SOURCES_PATH = CONFIG_DIR / "sources.json"
+
+
+def default_sources_path() -> Path:
+    return get_sources_path()
 
 DEFAULT_PLATFORMS = (
     {"name": "Pararius", "type": "pararius", "enabled": True},
@@ -64,7 +69,8 @@ def _legacy_sources_to_platforms(sources: list[dict]) -> list[dict]:
 
 
 def load_sources_raw(path: str | Path | None = None) -> dict:
-    config_path = Path(path or DEFAULT_SOURCES_PATH)
+    ensure_user_data()
+    config_path = Path(path or get_sources_path())
     return json.loads(config_path.read_text(encoding="utf-8"))
 
 
@@ -76,7 +82,8 @@ def ensure_sources_config(path: str | Path | None = None) -> None:
     """
     Normalize sources.json so both legacy (sources) and new (platforms) layouts work.
     """
-    config_path = Path(path or DEFAULT_SOURCES_PATH)
+    ensure_user_data()
+    config_path = Path(path or get_sources_path())
     if not config_path.exists():
         _write_sources_file(
             config_path,
@@ -104,7 +111,7 @@ def ensure_sources_config(path: str | Path | None = None) -> None:
 
 
 def _platform_rows(path: str | Path | None = None) -> list[dict]:
-    config_path = Path(path or DEFAULT_SOURCES_PATH)
+    config_path = Path(path or get_sources_path())
     ensure_sources_config(config_path)
     data = load_sources_raw(config_path)
     platforms = data.get("platforms") or []
@@ -154,7 +161,8 @@ def get_source(source_key: str, path: str | Path | None = None) -> SourceConfig:
 
 
 def save_platforms(platforms: list[dict], path: str | Path | None = None) -> tuple[SourceConfig, ...]:
-    config_path = Path(path or DEFAULT_SOURCES_PATH)
+    ensure_user_data()
+    config_path = Path(path or get_sources_path())
     cleaned: list[dict] = []
 
     for platform in platforms:

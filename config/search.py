@@ -5,7 +5,15 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from config.paths import ensure_user_data, get_search_path
+
 CONFIG_DIR = Path(__file__).resolve().parent
+
+
+def default_search_path() -> Path:
+    return get_search_path()
+
+
 DEFAULT_SEARCH_PATH = CONFIG_DIR / "search.json"
 
 PLATFORM_TEMPLATES = {
@@ -23,6 +31,7 @@ class SearchConfig:
     radius_km: float
     center_lat: float | None = None
     center_lon: float | None = None
+    neighborhood: str | None = None
 
     @property
     def slug(self) -> str:
@@ -32,12 +41,20 @@ class SearchConfig:
     def id(self) -> str:
         return self.slug
 
+    @property
+    def label(self) -> str:
+        if self.neighborhood:
+            return f"{self.neighborhood}, {self.city}"
+        return self.city
+
     def to_dict(self) -> dict[str, float | str | None]:
         return {
             "city": self.city,
             "radius_km": self.radius_km,
             "center_lat": self.center_lat,
             "center_lon": self.center_lon,
+            "neighborhood": self.neighborhood,
+            "label": self.label,
         }
 
 
@@ -62,7 +79,8 @@ def build_platform_url(platform: str, city: str) -> str:
 
 
 def load_search(path: str | Path | None = None) -> SearchConfig:
-    config_path = Path(path or DEFAULT_SEARCH_PATH)
+    ensure_user_data()
+    config_path = Path(path or get_search_path())
     if not config_path.exists():
         return SearchConfig(city="Amsterdam", radius_km=10.0)
 
@@ -71,11 +89,13 @@ def load_search(path: str | Path | None = None) -> SearchConfig:
     radius_km = float(data.get("radius_km", 10))
     center_lat = data.get("center_lat")
     center_lon = data.get("center_lon")
+    neighborhood = data.get("neighborhood")
     return SearchConfig(
         city=city,
         radius_km=max(0.5, radius_km),
         center_lat=float(center_lat) if center_lat is not None else None,
         center_lon=float(center_lon) if center_lon is not None else None,
+        neighborhood=str(neighborhood).strip() if neighborhood else None,
     )
 
 
@@ -85,17 +105,22 @@ def save_search(
     *,
     center_lat: float | None = None,
     center_lon: float | None = None,
+    neighborhood: str | None = None,
     path: str | Path | None = None,
 ) -> SearchConfig:
-    config_path = Path(path or DEFAULT_SEARCH_PATH)
+    ensure_user_data()
+    config_path = Path(path or get_search_path())
     cleaned_city = city.strip()
     if not cleaned_city:
         raise ValueError("City is required")
 
+    cleaned_neighborhood = neighborhood.strip() if neighborhood else None
     payload = {
         "city": cleaned_city,
         "radius_km": max(0.5, float(radius_km)),
     }
+    if cleaned_neighborhood:
+        payload["neighborhood"] = cleaned_neighborhood
     if center_lat is not None and center_lon is not None:
         payload["center_lat"] = center_lat
         payload["center_lon"] = center_lon
