@@ -43,13 +43,18 @@ def _write_file(data: dict[str, Any]) -> None:
         pass
 
 
+def _normalize_password(password: str) -> str | None:
+    cleaned = password.replace(" ", "").strip()
+    return cleaned or None
+
+
 def _config_from_mapping(data: dict[str, Any]) -> ServiceSmtpConfig | None:
     host = str(data.get("host", "")).strip()
     from_address = str(data.get("from_address", "")).strip()
     if not host or not from_address:
         return None
     username = str(data.get("username", "")).strip() or None
-    password = str(data.get("password", "")).strip() or None
+    password = _normalize_password(str(data.get("password", "")))
     return ServiceSmtpConfig(
         host=host,
         port=int(data.get("port", 587)),

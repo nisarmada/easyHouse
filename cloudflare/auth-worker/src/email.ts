@@ -36,15 +36,26 @@ function buildMime(from: string, payload: MailPayload): string {
   ].join("\r\n");
 }
 
-async function readResponse(reader: ReadableStreamDefaultReader<Uint8Array>, decoder: TextDecoder): Promise<string> {
-  let buffer = "";
+async function readSmtpResponse(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  decoder: TextDecoder,
+  buffer: { value: string },
+): Promise<string> {
   while (true) {
+    while (buffer.value.includes("\r\n")) {
+      const index = buffer.value.indexOf("\r\n");
+      const line = buffer.value.slice(0, index);
+      buffer.value = buffer.value.slice(index + 2);
+      if (/^\d{3} /.test(line)) {
+        return line;
+      }
+    }
     const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    if (buffer.includes("\r\n")) break;
+    if (done) {
+      throw new Error("SMTP connection closed unexpectedly");
+    }
+    buffer.value += decoder.decode(value, { stream: true });
   }
-  return buffer.trim();
 }
 
 async function expectCode(line: string, code: number): Promise<void> {
@@ -63,44 +74,60 @@ export async function sendServiceEmail(
   },
   payload: MailPayload,
 ): Promise<void> {
-  if (!env.SMTP_USER || !env.SMTP_PASSWORD) {
+  const username = env.SMTP_USER?.trim();
+  const password = env.SMTP_PASSWORD?.replace(/\s/g, "") || "";
+  if (!username || !password) {
     throw new Error("SMTP credentials are not configured on the auth worker");
   }
 
   const host = env.SMTP_HOST || "smtp.gmail.com";
   const port = Number(env.SMTP_PORT || 465);
-  const from = env.SMTP_FROM || `easyHouse <${env.SMTP_USER}>`;
+  const from = env.SMTP_FROM || `easyHouse <${username}>`;
   const mime = buildMime(from, payload);
+  const secureTransport = port === 465 ? "on" : "starttls";
 
-  const socket = connect({
-    hostname: host,
-    port,
-    secureTransport: port === 465 ? "on" : "starttls",
-  });
+  let socket = connect({ hostname: host, port }, { secureTransport });
+  await socket.opened;
 
-  const reader = socket.readable.getReader();
-  const writer = socket.writable.getWriter();
+  let reader = socket.readable.getReader();
+  let writer = socket.writable.getWriter();
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+  const buffer = { value: "" };
 
   async function command(text: string, expected = 250): Promise<string> {
-    await writer.write(encoder.encode(`${text}\r\n`));
-    const line = await readResponse(reader, decoder);
+    if (text) {
+      await writer.write(encoder.encode(`${text}\r\n`));
+    }
+    const line = await readSmtpResponse(reader, decoder, buffer);
     await expectCode(line, expected);
     return line;
   }
 
   try {
-    await readResponse(reader, decoder);
-    await command(`EHLO easyhouse`, 250);
-    await command("AUTH LOGIN", 334);
-    await command(encodeBase64(env.SMTP_USER), 334);
-    await command(encodeBase64(env.SMTP_PASSWORD), 235);
-    await command(`MAIL FROM:<${env.SMTP_USER}>`, 250);
+    await readSmtpResponse(reader, decoder, buffer);
+    await command("EHLO easyhouse", 250);
+
+    if (port !== 465) {
+      await command("STARTTLS", 220);
+      await reader.cancel();
+      await writer.close();
+      socket = socket.startTls();
+      await socket.opened;
+      reader = socket.readable.getReader();
+      writer = socket.writable.getWriter();
+      buffer.value = "";
+      await readSmtpResponse(reader, decoder, buffer);
+      await command("EHLO easyhouse", 250);
+    }
+
+    const auth = encodeBase64(`\0${username}\0${password}`);
+    await command(`AUTH PLAIN ${auth}`, 235);
+    await command(`MAIL FROM:<${username}>`, 250);
     await command(`RCPT TO:<${payload.to}>`, 250);
     await command("DATA", 354);
     await writer.write(encoder.encode(`${mime}\r\n.\r\n`));
-    const dataResponse = await readResponse(reader, decoder);
+    const dataResponse = await readSmtpResponse(reader, decoder, buffer);
     await expectCode(dataResponse, 250);
     await command("QUIT", 221);
   } finally {

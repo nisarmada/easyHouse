@@ -4,6 +4,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKER_DIR="$ROOT/cloudflare/auth-worker"
 
+if [[ -f "$ROOT/.env" ]]; then
+  eval "$(ROOT="$ROOT" python3 - <<'PY'
+import os
+import shlex
+import sys
+from pathlib import Path
+
+sys.path.insert(0, os.environ["ROOT"])
+from config.env import load_dotenv
+
+load_dotenv(Path(os.environ["ROOT"]) / ".env")
+for key in ("SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"):
+    value = os.environ.get(key, "")
+    if value:
+        print(f"export {key}={shlex.quote(value)}")
+PY
+)"
+fi
+
 if ! command -v npx >/dev/null 2>&1; then
   echo "npx is required (install Node.js first)" >&2
   exit 1
@@ -37,9 +56,7 @@ fi
 
 printf '%s' "$SMTP_USER" | npx wrangler secret put SMTP_USER
 printf '%s' "$SMTP_PASSWORD" | npx wrangler secret put SMTP_PASSWORD
-if [[ -n "${SMTP_FROM:-}" ]]; then
-  printf '%s' "$SMTP_FROM" | npx wrangler secret put SMTP_FROM
-fi
+# SMTP_FROM is a plain var in wrangler.jsonc — do not upload as a secret.
 
 DEPLOY_OUTPUT="$(npx wrangler deploy 2>&1 | tee /dev/stderr)"
 WORKER_URL="$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -1 || true)"

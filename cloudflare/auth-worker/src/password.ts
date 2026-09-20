@@ -1,4 +1,6 @@
-const ITERATIONS = 120_000;
+// Cloudflare Workers Web Crypto supports at most 100,000 PBKDF2 iterations.
+const ITERATIONS = 100_000;
+const MAX_ITERATIONS = 100_000;
 
 function toHex(bytes: Uint8Array): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -34,6 +36,9 @@ export async function verifyPassword(password: string, encoded: string): Promise
     const [scheme, iterationsRaw, saltHex, digestHex] = encoded.split("$");
     if (scheme !== "pbkdf2_sha256") return false;
     const iterations = Number(iterationsRaw);
+    if (!Number.isFinite(iterations) || iterations <= 0 || iterations > MAX_ITERATIONS) {
+      return false;
+    }
     const salt = fromHex(saltHex);
     const expected = fromHex(digestHex);
     const keyMaterial = await crypto.subtle.importKey(

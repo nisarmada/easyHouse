@@ -25,7 +25,11 @@ def _request(
     if not base:
         raise RemoteAuthError("Remote auth is not configured")
 
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "easyHouse/1.0",
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
 

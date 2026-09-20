@@ -8,7 +8,12 @@ import sys
 import webbrowser
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from config.env import load_dotenv
+
+load_dotenv(ROOT / ".env")
 
 from config.paths import ensure_user_data, get_sources_path
 from services.agent import AgentConfig, run_agent

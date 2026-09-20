@@ -309,8 +309,12 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
     try {
-      if (path === "/health") {
-        return json({ status: "ok", can_send_mail: Boolean(env.SMTP_USER && env.SMTP_PASSWORD) });
+      if (path === "/" || path === "/health") {
+        return json({
+          status: "ok",
+          service: "easyhouse-auth",
+          can_send_mail: Boolean(env.SMTP_USER && env.SMTP_PASSWORD),
+        });
       }
 
       if (path === "/auth/status" && request.method === "GET") {
@@ -323,10 +327,10 @@ export default {
           : ((await request.json().catch(() => ({}))) as Record<string, unknown>);
 
       if (path === "/auth/signup" && request.method === "POST") {
-        return handleSignup(env, body as { email?: string; password?: string });
+        return await handleSignup(env, body as { email?: string; password?: string });
       }
       if (path === "/auth/login" && request.method === "POST") {
-        return handleLogin(env, body as { email?: string; password?: string });
+        return await handleLogin(env, body as { email?: string; password?: string });
       }
       if (path === "/auth/logout" && request.method === "POST") {
         const token = bearerToken(request);
@@ -336,22 +340,22 @@ export default {
         return json({ status: "signed_out" });
       }
       if (path === "/auth/verify" && request.method === "POST") {
-        return handleVerify(env, body as { code?: string });
+        return await handleVerify(env, body as { code?: string });
       }
       if (path === "/auth/resend-verification" && request.method === "POST") {
         const token = bearerToken(request);
         if (!token) throw new Error("Not signed in");
-        return handleResend(env, token);
+        return await handleResend(env, token);
       }
       if (path === "/auth/alerts" && request.method === "PUT") {
         const token = bearerToken(request);
         if (!token) throw new Error("Not signed in");
-        return handleAlerts(env, token, Boolean((body as { enabled?: boolean }).enabled));
+        return await handleAlerts(env, token, Boolean((body as { enabled?: boolean }).enabled));
       }
       if (path === "/auth/notify" && request.method === "POST") {
         const token = bearerToken(request);
         if (!token) throw new Error("Not signed in");
-        return handleNotify(env, token, body as { listings?: Array<Record<string, unknown>> });
+        return await handleNotify(env, token, body as { listings?: Array<Record<string, unknown>> });
       }
 
       return error("Not found", 404);
