@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Housing is a human need, not an investment. easyHouse helps you find a home — scraping from your machine, alerts to your inbox."
+    />
+    <title>easyHouse — Housing is a human need</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/theme.css" />
+    <link rel="stylesheet" href="css/landing.css" />
+  </head>
+  <body class="landing-page">
+    <div class="page-glow page-glow--left" aria-hidden="true"></div>
+    <div class="page-glow page-glow--right" aria-hidden="true"></div>
+
+    <header class="header">
+      <a class="logo" href="./">
+        <span class="logo-mark" aria-hidden="true">⌂</span>
+        easyHouse
+      </a>
+      <nav class="nav" id="site-nav">
+        <a href="#why">Why</a>
+        <a href="#how">How it works</a>
+        <a href="#install">Install</a>
+      </nav>
+      <a class="btn btn--dark btn--sm header-cta" href="#install">Get started</a>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false">
+        <span></span><span></span>
+      </button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">A home is shelter, not a stock ticker</p>
+        <h1>Housing is a human need,<br />not an investment.</h1>
+        <p class="hero-lead">
+          Rent shouldn't be a race against bots, agencies, and speculators. easyHouse watches
+          rental listings from <strong>your computer</strong> — your IP, your search, your alerts —
+          so finding a place to live stays between you and a roof.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn--dark" href="#install">Run easyHouse locally</a>
+          <a class="btn btn--ghost" href="#why">Read our stance</a>
+        </div>
+        <p class="hero-proof">Built for renters in the Netherlands · Scraping runs on your machine</p>
+      </section>
+
+      <section class="section" id="why">
+        <div class="section-head">
+          <p class="eyebrow">The problem</p>
+          <h2>When housing becomes an asset class, people become collateral.</h2>
+          <p class="section-lead">
+            Investors outbid families. Platforms favor the fastest click. Middlemen charge for access
+            to information that should be public.
+          </p>
+        </div>
+        <div class="cards cards--3">
+          <article class="card">
+            <h3>Shelter first</h3>
+            <p>A stable home is the foundation for work, health, and community.</p>
+          </article>
+          <article class="card">
+            <h3>No centralized gatekeepers</h3>
+            <p>We run the search on <em>your</em> machine — not a shared scraper farm.</p>
+          </article>
+          <article class="card">
+            <h3>People over profit</h3>
+            <p>A tool for renters — open, local, and focused on getting you housed.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section section--split" id="how">
+        <div class="split-visual">
+          <div class="mock-window">
+            <div class="mock-window-bar"><span></span><span></span><span></span></div>
+            <div class="mock-window-body">
+              <small class="muted">Amsterdam · Jordaan · 5 km</small>
+              <strong style="display:block;font-size:1.4rem;margin:8px 0 16px">3 new listings</strong>
+              <p class="muted" style="margin:0">Alert sent to your inbox</p>
+            </div>
+          </div>
+        </div>
+        <div class="split-content">
+          <p class="eyebrow">How it works</p>
+          <h2>Pick an area on the map. We watch the rest.</h2>
+          <ol class="steps" style="padding-left:20px;color:var(--text-muted)">
+            <li>Choose a city and optional neighborhood</li>
+            <li>Set your radius — see the circle on the map</li>
+            <li>Create an account and verify your email for alerts</li>
+            <li>Get email alerts for new listings in that zone</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" id="install">
+        <div class="cta-block">
+          <p class="eyebrow" style="color:#f4c4a8">Get started</p>
+          <h2>Run easyHouse on your Mac</h2>
+          <p class="section-lead">
+            Scraping and listings stay on your machine. Verification emails are sent through the
+            easyHouse cloud auth service — no SMTP setup required.
+          </p>
+          <pre class="code-block" style="text-align:left;max-width:640px;margin:24px auto">git clone https://github.com/YOUR_USER/easyHouse.git
+cd easyHouse
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/agent.py --open-browser</pre>
+          <p class="section-lead">
+            Then open <strong>http://127.0.0.1:8080/app</strong>, create an account, and enter the
+            verification code from your email.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn--dark" href="http://127.0.0.1:8080/app?view=search">Open local app</a>
+            <a class="btn btn--ghost" href="https://github.com/YOUR_USER/easyHouse">View on GitHub</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <a class="logo" href="./">
+        <span class="logo-mark" aria-hidden="true">⌂</span>
+        easyHouse
+      </a>
+      <p class="muted">Housing is a human need, not an investment.</p>
+      <nav class="footer-nav">
+        <a href="#why">Why</a>
+        <a href="#install">Install</a>
+        <a href="http://127.0.0.1:8080/app">Local dashboard</a>
+      </nav>
+      <p class="muted" style="font-size:0.82rem">© 2026 easyHouse. Built for renters.</p>
+    </footer>
+
+    <script src="js/landing.js"></script>
+  </body>
+</html>
