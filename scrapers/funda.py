@@ -5,10 +5,9 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from scrapers.http import fetch_html, page_delay
 from scrapers.json_ld import iter_json_ld_scripts, node_types
 from scrapers.listing import Listing
-from scrapers.pagination import merge_unique_batch
+from scrapers.pagination import PaginatedScrapeOutcome, run_paginated_scrape
 
 DEFAULT_SEARCH_URL = "https://www.funda.nl/huur/amsterdam/"
 
@@ -164,28 +163,24 @@ def parse_listings(html: str, *, city: str | None = None) -> list[Listing]:
     return listings
 
 
-def scrape_search(base_url: str = DEFAULT_SEARCH_URL, *, max_pages: int | None = None) -> list[Listing]:
+def _funda_should_continue(html: str, page: int) -> bool:
+    del html, page
+    return True
+
+
+def scrape_search(
+    base_url: str = DEFAULT_SEARCH_URL,
+    *,
+    max_pages: int | None = None,
+) -> PaginatedScrapeOutcome:
     if max_pages is not None and max_pages < 1:
-        return []
+        return PaginatedScrapeOutcome([], error=None, pages_completed=0)
 
-    seen_ids: set[str] = set()
-    listings: list[Listing] = []
     city = _city_from_url(base_url)
-    page = 1
-
-    while True:
-        if max_pages is not None and page > max_pages:
-            break
-
-        html = fetch_html(page_url(base_url, page))
-        batch = parse_listings(html, city=city)
-        if not batch:
-            break
-
-        if merge_unique_batch(seen_ids, listings, batch) == 0:
-            break
-
-        page += 1
-        page_delay()
-
-    return listings
+    return run_paginated_scrape(
+        base_url=base_url,
+        max_pages=max_pages,
+        page_url_for=page_url,
+        parse_page=lambda html: parse_listings(html, city=city),
+        should_fetch_next=_funda_should_continue,
+    )
