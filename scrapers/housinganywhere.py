@@ -4,7 +4,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from scrapers.js_string import extract_json_parse_payload
 from scrapers.listing import Listing
-from scrapers.pagination import PaginatedScrapeOutcome, run_paginated_scrape
+from scrapers.pagination import make_scrape_search
 
 DEFAULT_SEARCH_URL = "https://housinganywhere.com/s/Amsterdam--Netherlands"
 
@@ -119,16 +119,9 @@ def _has_next_page(html: str, current_page: int) -> bool:
     return current_page < int(pages)
 
 
-def scrape_search(
-    base_url: str = DEFAULT_SEARCH_URL,
-    *,
-    max_pages: int | None = None,
-) -> PaginatedScrapeOutcome:
-    city = _city_from_url(base_url)
-    return run_paginated_scrape(
-        base_url=base_url,
-        max_pages=max_pages,
-        page_url_for=page_url,
-        parse_page=lambda html: parse_listings(html, city=city),
-        should_fetch_next=_has_next_page,
-    )
+scrape_search = make_scrape_search(
+    default_search_url=DEFAULT_SEARCH_URL,
+    page_url_for=page_url,
+    has_next=_has_next_page,
+    page_parser=lambda base: lambda html: parse_listings(html, city=_city_from_url(base)),
+)

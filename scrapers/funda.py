@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup, Tag
 
 from scrapers.json_ld import iter_json_ld_scripts, node_types
 from scrapers.listing import Listing
-from scrapers.pagination import PaginatedScrapeOutcome, run_paginated_scrape
+from scrapers.pagination import make_scrape_search
 
 DEFAULT_SEARCH_URL = "https://www.funda.nl/huur/amsterdam/"
 
@@ -163,24 +163,10 @@ def parse_listings(html: str, *, city: str | None = None) -> list[Listing]:
     return listings
 
 
-def _funda_should_continue(html: str, page: int) -> bool:
-    del html, page
-    return True
-
-
-def scrape_search(
-    base_url: str = DEFAULT_SEARCH_URL,
-    *,
-    max_pages: int | None = None,
-) -> PaginatedScrapeOutcome:
-    if max_pages is not None and max_pages < 1:
-        return PaginatedScrapeOutcome([], error=None, pages_completed=0)
-
-    city = _city_from_url(base_url)
-    return run_paginated_scrape(
-        base_url=base_url,
-        max_pages=max_pages,
-        page_url_for=page_url,
-        parse_page=lambda html: parse_listings(html, city=city),
-        should_fetch_next=_funda_should_continue,
-    )
+scrape_search = make_scrape_search(
+    default_search_url=DEFAULT_SEARCH_URL,
+    page_url_for=page_url,
+    has_next=lambda _html, _page: True,
+    page_parser=lambda base: lambda html: parse_listings(html, city=_city_from_url(base)),
+    skip_when=lambda max_pages: max_pages is not None and max_pages < 1,
+)

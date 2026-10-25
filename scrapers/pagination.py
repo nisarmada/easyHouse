@@ -75,3 +75,35 @@ def run_paginated_scrape(
         page_delay()
 
     return PaginatedScrapeOutcome(listings, error=None, pages_completed=pages_completed)
+
+
+# Public alias: fetch is implicit via page_url_for + fetch_html inside paginate.
+paginate = run_paginated_scrape
+
+
+def make_scrape_search(
+    *,
+    default_search_url: str,
+    page_url_for: Callable[[str, int], str],
+    has_next: Callable[[str, int], bool],
+    page_parser: Callable[[str], Callable[[str], list[Listing]]],
+    skip_when: Callable[[int | None], bool] | None = None,
+) -> Callable[..., PaginatedScrapeOutcome]:
+    """Build a site ``scrape_search(base_url=..., max_pages=...)`` from page URL, parse, and has-next hooks."""
+
+    def scrape_search(
+        base_url: str = default_search_url,
+        *,
+        max_pages: int | None = None,
+    ) -> PaginatedScrapeOutcome:
+        if skip_when is not None and skip_when(max_pages):
+            return PaginatedScrapeOutcome([], error=None, pages_completed=0)
+        return paginate(
+            base_url=base_url,
+            max_pages=max_pages,
+            page_url_for=page_url_for,
+            parse_page=page_parser(base_url),
+            should_fetch_next=has_next,
+        )
+
+    return scrape_search
