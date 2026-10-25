@@ -7,6 +7,7 @@ from scrapers.housinganywhere import scrape_search as scrape_housinganywhere
 from scrapers.huurwoningen import scrape_search as scrape_huurwoningen
 from scrapers.kamernet import scrape_search as scrape_kamernet
 from scrapers.listing import Listing
+from scrapers.pagination import PaginatedScrapeOutcome
 from scrapers.pararius import scrape_search as scrape_pararius
 
 _SCRAPERS = {
@@ -18,15 +19,23 @@ _SCRAPERS = {
 }
 
 
-def scrape_source(source: SourceConfig, *, max_pages: int | None = None) -> list[Listing]:
+def scrape_source_outcome(
+    source: SourceConfig,
+    *,
+    max_pages: int | None = None,
+) -> PaginatedScrapeOutcome:
     scraper = _SCRAPERS.get(source.type)
     if scraper is None:
         raise ValueError(f"Unsupported source type: {source.type!r}")
 
     search = load_search()
-    listings = scraper(source.url, max_pages=max_pages)
-    for listing in listings:
+    outcome = scraper(source.url, max_pages=max_pages)
+    for listing in outcome.listings:
         listing.search_id = search.id
         if not listing.city:
             listing.city = search.city
-    return listings
+    return outcome
+
+
+def scrape_source(source: SourceConfig, *, max_pages: int | None = None) -> list[Listing]:
+    return scrape_source_outcome(source, max_pages=max_pages).listings

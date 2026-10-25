@@ -9,7 +9,7 @@ from config.search_service import filter_listings_by_radius
 from db.db import get_connection, init_db, sync_listings, upsert_listings
 from notify import notify_new_listings
 from scrapers.listing import Listing
-from scrapers.registry import scrape_source
+from scrapers.registry import scrape_source_outcome
 from services.scrape_coordination import begin_scrape, end_scrape, is_cancelled
 
 
@@ -37,8 +37,9 @@ def scrape_and_store(
     max_pages: int | None,
     full_sync: bool,
 ) -> ScrapeResult:
-    listings = scrape_source(source, max_pages=max_pages)
-    if full_sync:
+    outcome = scrape_source_outcome(source, max_pages=max_pages)
+    listings = outcome.listings
+    if full_sync and not outcome.error:
         new_listings, removed = sync_listings(conn, listings)
     else:
         new_listings = upsert_listings(conn, listings)
@@ -52,6 +53,7 @@ def scrape_and_store(
         removed_count=len(removed),
         new_listings=new_listings,
         removed=removed,
+        error=outcome.error,
     )
 
 
