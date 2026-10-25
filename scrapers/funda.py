@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import json
 import re
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from scrapers.http import fetch_html, page_delay
+from scrapers.json_ld import iter_json_ld_scripts, node_types
 from scrapers.listing import Listing
+from scrapers.pagination import merge_unique_batch
 
 DEFAULT_SEARCH_URL = "https://www.funda.nl/huur/amsterdam/"
 
@@ -35,10 +36,10 @@ def _title_from_url(url: str) -> str:
     return slug.replace("-", " ").title()
 
 
-def _external_id(url: str) -> str:
+def _external_id(url: str) -> str | None:
     match = re.search(r"/(\d+)/?$", url)
     if not match:
-        raise ValueError(f"Could not parse Funda listing id from {url}")
+        return None
     return match.group(1)
 
 
@@ -48,49 +49,83 @@ def _normalize_listing_url(href: str) -> str:
     return href
 
 
+_DETAIL_HREF = re.compile(r"/detail/huur/.+/\d+/?$")
+_PRICE_RE = re.compile(r"€\s*([\d.]+)\s*p\.?m")
+
+
+def _price_from_anchor(anchor: Tag) -> int | None:
+    def _parse_price(text: str) -> int | None:
+        match = _PRICE_RE.search(text)
+        if not match:
+            return None
+        return int(match.group(1).replace(".", ""))
+
+    direct = _parse_price(anchor.get_text(" ", strip=True))
+    if direct is not None:
+        return direct
+
+    sibling_chunks = [anchor.get_text(" ", strip=True)]
+    for sibling in anchor.next_siblings:
+        if isinstance(sibling, Tag) and sibling.name == "a":
+            href = sibling.get("href", "")
+            if _DETAIL_HREF.search(href):
+                break
+        if isinstance(sibling, Tag):
+            sibling_chunks.append(sibling.get_text(" ", strip=True))
+        elif isinstance(sibling, str) and sibling.strip():
+            sibling_chunks.append(sibling.strip())
+    sibling_price = _parse_price(" ".join(sibling_chunks))
+    if sibling_price is not None:
+        return sibling_price
+
+    node: Tag | None = anchor.parent
+    for _ in range(8):
+        if node is None:
+            break
+        detail_links = node.find_all("a", href=_DETAIL_HREF)
+        if len(detail_links) == 1:
+            single_card_price = _parse_price(node.get_text(" ", strip=True))
+            if single_card_price is not None:
+                return single_card_price
+        if len(detail_links) > 1:
+            break
+        node = node.parent
+    return None
+
+
 def _card_details(html: str) -> dict[str, tuple[str, int | None, str]]:
     soup = BeautifulSoup(html, "html.parser")
     details: dict[str, tuple[str, int | None, str]] = {}
 
-    for anchor in soup.find_all("a", href=re.compile(r"/detail/huur/.+/\d+/?$")):
+    for anchor in soup.find_all("a", href=_DETAIL_HREF):
         href = _normalize_listing_url(anchor["href"])
         external_id = _external_id(href)
+        if not external_id:
+            continue
         title = anchor.get("aria-label") or anchor.get_text(" ", strip=True) or _title_from_url(href)
-
-        price_eur: int | None = None
-        node = anchor
-        for _ in range(8):
-            node = node.parent
-            if node is None:
-                break
-            text = node.get_text(" ", strip=True)
-            match = re.search(r"€\s*([\d.]+)\s*p\.?m", text)
-            if match:
-                price_eur = int(match.group(1).replace(".", ""))
-                break
-
+        price_eur = _price_from_anchor(anchor)
         details[external_id] = (title, price_eur, href)
 
     return details
 
 
 def _listings_from_json_ld(html: str, cards: dict[str, tuple[str, int | None, str]], *, city: str | None) -> list[Listing]:
-    soup = BeautifulSoup(html, "html.parser")
     listings: list[Listing] = []
 
-    for script in soup.find_all("script", type="application/ld+json"):
-        if not script.string:
-            continue
-        data = json.loads(script.string)
-        types = data.get("@type")
-        if isinstance(types, str):
-            types = [types]
-        if "ItemList" not in types:
+    for data in iter_json_ld_scripts(html):
+        if "ItemList" not in node_types(data):
             continue
 
         for entry in data.get("itemListElement", []):
-            listing_url = _normalize_listing_url(entry["url"])
+            if not isinstance(entry, dict):
+                continue
+            listing_url = entry.get("url")
+            if not listing_url:
+                continue
+            listing_url = _normalize_listing_url(str(listing_url))
             external_id = _external_id(listing_url)
+            if not external_id:
+                continue
             card_title, card_price, card_url = cards.get(external_id, ("", None, listing_url))
             listings.append(
                 Listing(
@@ -147,15 +182,7 @@ def scrape_search(base_url: str = DEFAULT_SEARCH_URL, *, max_pages: int | None =
         if not batch:
             break
 
-        new_in_batch = 0
-        for listing in batch:
-            if listing.external_id in seen_ids:
-                continue
-            seen_ids.add(listing.external_id)
-            listings.append(listing)
-            new_in_batch += 1
-
-        if new_in_batch == 0:
+        if merge_unique_batch(seen_ids, listings, batch) == 0:
             break
 
         page += 1
