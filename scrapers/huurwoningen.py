@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
 from scrapers.http import fetch_html, page_delay
+from scrapers.json_ld import iter_json_ld_scripts, node_types
 from scrapers.listing import Listing
+from scrapers.pagination import merge_unique_batch
 
 DEFAULT_SEARCH_URL = "https://www.huurwoningen.nl/in/amsterdam/"
 
@@ -38,33 +39,38 @@ def has_next_page(html: str) -> bool:
 
 
 def parse_listings(html: str, *, city: str | None = None) -> list[Listing]:
-    soup = BeautifulSoup(html, "html.parser")
     listings: list[Listing] = []
 
-    for script in soup.find_all("script", type="application/ld+json"):
-        if not script.string or len(script.string) < 1000:
+    for node in iter_json_ld_scripts(html):
+        main_entity = node.get("mainEntity")
+        if not isinstance(main_entity, dict):
+            continue
+        if "ItemList" not in node_types(main_entity):
             continue
 
-        data = json.loads(script.string)
-        for node in data.get("@graph", []):
-            main_entity = node.get("mainEntity", {})
-            if main_entity.get("@type") != "ItemList":
+        for entry in main_entity.get("itemListElement", []):
+            if not isinstance(entry, dict):
                 continue
-
-            for entry in main_entity.get("itemListElement", []):
-                item = entry["item"]
-                listing_url = item["url"]
-                price = item.get("offers", {}).get("price")
-                listings.append(
-                    Listing(
-                        source="huurwoningen",
-                        external_id=_external_id(listing_url),
-                        url=listing_url,
-                        title=item.get("name", ""),
-                        price_eur=int(price) if price is not None else None,
-                        city=city,
-                    )
+            item = entry.get("item")
+            if not isinstance(item, dict):
+                continue
+            listing_url = item.get("url")
+            if not listing_url:
+                continue
+            listing_url = str(listing_url)
+            offers = item.get("offers")
+            price = offers.get("price") if isinstance(offers, dict) else None
+            listings.append(
+                Listing(
+                    source="huurwoningen",
+                    external_id=_external_id(listing_url),
+                    url=listing_url,
+                    title=str(item.get("name") or ""),
+                    price_eur=int(price) if price is not None else None,
+                    city=city,
                 )
+            )
+        if listings:
             return listings
 
     return listings
@@ -85,11 +91,8 @@ def scrape_search(base_url: str = DEFAULT_SEARCH_URL, *, max_pages: int | None =
         if not batch:
             break
 
-        for listing in batch:
-            if listing.external_id in seen_ids:
-                continue
-            seen_ids.add(listing.external_id)
-            listings.append(listing)
+        if merge_unique_batch(seen_ids, listings, batch) == 0:
+            break
 
         if not has_next_page(html):
             break

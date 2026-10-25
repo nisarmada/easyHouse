@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 
 from scrapers.http import fetch_html, page_delay
 from scrapers.listing import Listing
+from scrapers.pagination import merge_unique_batch
 
 DEFAULT_SEARCH_URL = "https://kamernet.nl/huren/appartement-amsterdam"
 
@@ -53,13 +54,18 @@ def _find_listings_response(html: str) -> dict:
     if not script or not script.string:
         return {}
 
-    data = json.loads(script.string)
-    return (
+    try:
+        data = json.loads(script.string)
+    except json.JSONDecodeError:
+        return {}
+
+    response = (
         data.get("props", {})
         .get("pageProps", {})
         .get("targetPageProps", {})
         .get("findListingsResponse", {})
     )
+    return response if isinstance(response, dict) else {}
 
 
 def has_next_page(html: str, current_page: int) -> bool:
@@ -74,11 +80,19 @@ def has_next_page(html: str, current_page: int) -> bool:
 def parse_listings(html: str, *, base_url: str, city: str | None = None) -> list[Listing]:
     response = _find_listings_response(html)
     raw_listings = response.get("listings", [])
+    if not isinstance(raw_listings, list):
+        return []
+
     inferred_city = city or _city_from_url(base_url)
     listings: list[Listing] = []
 
     for item in raw_listings:
-        listing_id = str(item["listingId"])
+        if not isinstance(item, dict):
+            continue
+        listing_id = item.get("listingId")
+        if listing_id is None:
+            continue
+        listing_id = str(listing_id)
         street = item.get("street", "")
         house_number = item.get("houseNumber")
         listings.append(
@@ -112,11 +126,8 @@ def scrape_search(base_url: str = DEFAULT_SEARCH_URL, *, max_pages: int | None =
         if not batch:
             break
 
-        for listing in batch:
-            if listing.external_id in seen_ids:
-                continue
-            seen_ids.add(listing.external_id)
-            listings.append(listing)
+        if merge_unique_batch(seen_ids, listings, batch) == 0:
+            break
 
         if not has_next_page(html, page):
             break
